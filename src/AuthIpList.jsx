@@ -1,10 +1,9 @@
 // FRONTEND (AuthIpList.jsx)
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { FaCheck, FaEdit, FaTrash } from "react-icons/fa";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
-
 
 function parseDateTimeFromBackend(dateTime) {
   if (!dateTime) return { date: "", time: "00:00:00" };
@@ -67,15 +66,47 @@ function parseNumberBr(value) {
   return digits ? Number(digits) : 0;
 }
 
+// Função para comparar valores (numéricos, datas ou strings) para ordenação
+function compareValues(a, b, key, direction) {
+  let valueA = a[key];
+  let valueB = b[key];
+
+  // Tenta converter para número
+  const numA = parseFloat(valueA);
+  const numB = parseFloat(valueB);
+  if (!isNaN(numA) && !isNaN(numB)) {
+    valueA = numA;
+    valueB = numB;
+  } else {
+    // Tenta converter para data
+    const dateA = new Date(valueA);
+    const dateB = new Date(valueB);
+    if (!isNaN(dateA) && !isNaN(dateB)) {
+      valueA = dateA.getTime();
+      valueB = dateB.getTime();
+    }
+  }
+
+  if (valueA < valueB) {
+    return direction === "asc" ? -1 : 1;
+  }
+  if (valueA > valueB) {
+    return direction === "asc" ? 1 : -1;
+  }
+  return 0;
+}
+
 export default function AuthIpList() {
   const [lista, setLista] = useState([]);
   const [loading, setLoading] = useState(false);
+
   const [form, setForm] = useState({
     ip_address: "",
     description: "",
     data_vencimento: "",
     limite_consultas_mensal: "",
   });
+
   const [editingId, setEditingId] = useState(null);
   const [editingForm, setEditingForm] = useState({
     ip_address: "",
@@ -84,9 +115,11 @@ export default function AuthIpList() {
     data_vencimento_time: "",
     limite_consultas_mensal: "",
   });
-  const [refreshSeconds, setRefreshSeconds] = useState(30);
-  const intervalRef = useRef(null);
 
+  // Estados para ordenação
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  // Buscar lista
   const fetchAuthIpList = async () => {
     setLoading(true);
     try {
@@ -104,18 +137,28 @@ export default function AuthIpList() {
     setLoading(false);
   };
 
+  // Criação
   const handleCreate = async () => {
-    if (
-      !form.ip_address ||
-      !form.data_vencimento ||
-      !form.limite_consultas_mensal
-    )
+    // Remove espaços em branco do início e fim
+    const ipTrimmed = form.ip_address.trim();
+  
+    // Verifica se campos obrigatórios estão preenchidos
+    if (!ipTrimmed || !form.data_vencimento || !form.limite_consultas_mensal) {
+      alert("Preencha todos os campos obrigatórios.");
       return;
+    }
+  
+    // Verifica se o IP já existe na lista (ignora espaços extras no banco também)
+    if (lista.some((item) => item.ip_address.trim() === ipTrimmed)) {
+      alert("IP já cadastrado!");
+      return;
+    }
+  
     try {
       const datePart = convertDDMMYYYYtoYYYYMMDD(form.data_vencimento);
       const finalDateTime = datePart + " 00:00:00";
       await axios.post("https://api-js-in100.vercel.app/api/auth-ips", {
-        ip_address: form.ip_address,
+        ip_address: ipTrimmed, // Envia o IP sem espaços
         description: form.description,
         data_vencimento: finalDateTime,
         limite_consultas_mensal: parseNumberBr(form.limite_consultas_mensal),
@@ -131,7 +174,10 @@ export default function AuthIpList() {
       console.error("Erro ao criar registro:", error);
     }
   };
+  
+  
 
+  // Edição
   const handleEdit = (item) => {
     setEditingId(item.id);
     const { date, time } = parseDateTimeFromBackend(item.data_vencimento);
@@ -144,19 +190,23 @@ export default function AuthIpList() {
     });
   };
 
+  // Atualizar
   const handleUpdate = async () => {
     if (!editingId) return;
     try {
       const datePart = convertDDMMYYYYtoYYYYMMDD(editingForm.data_vencimento);
       const finalDateTime = datePart + " " + editingForm.data_vencimento_time;
-      await axios.put(`https://api-js-in100.vercel.app/api/auth-ips/${editingId}`, {
-        ip_address: editingForm.ip_address,
-        description: editingForm.description,
-        data_vencimento: finalDateTime,
-        limite_consultas_mensal: parseNumberBr(
-          editingForm.limite_consultas_mensal
-        ),
-      });
+      await axios.put(
+        `https://api-js-in100.vercel.app/api/auth-ips/${editingId}`,
+        {
+          ip_address: editingForm.ip_address,
+          description: editingForm.description,
+          data_vencimento: finalDateTime,
+          limite_consultas_mensal: parseNumberBr(
+            editingForm.limite_consultas_mensal
+          ),
+        }
+      );
       setEditingId(null);
       fetchAuthIpList();
     } catch (error) {
@@ -164,6 +214,7 @@ export default function AuthIpList() {
     }
   };
 
+  // Excluir
   const handleDelete = async (id) => {
     if (!window.confirm("Deseja excluir este registro?")) return;
     try {
@@ -174,6 +225,7 @@ export default function AuthIpList() {
     }
   };
 
+  // Masks
   const handleCreateDateChange = (e) => {
     setForm({ ...form, data_vencimento: applyDateMask(e.target.value) });
   };
@@ -205,29 +257,27 @@ export default function AuthIpList() {
     setEditingForm({ ...editingForm, limite_consultas_mensal: formatted });
   };
 
+  // Efeito para buscar dados inicialmente
   useEffect(() => {
     fetchAuthIpList();
-    intervalRef.current = setInterval(() => {
-      setRefreshSeconds((prev) => {
-        if (prev <= 1) {
-          fetchAuthIpList();
-          return 30;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(intervalRef.current);
   }, []);
 
-  const totalLinhas = lista.length;
-  const totalLimite = lista.reduce(
-    (acc, item) => acc + (parseInt(item.limite_consultas_mensal, 10) || 0),
-    0
-  );
-  const totalCarregado = lista.reduce(
-    (acc, item) => acc + (parseInt(item.carregado, 10) || 0),
-    0
-  );
+  // Lógica de ordenação
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+  };
+
+  // Cria lista ordenada
+  let sortedList = [...lista];
+  if (sortConfig.key) {
+    sortedList.sort((a, b) =>
+      compareValues(a, b, sortConfig.key, sortConfig.direction)
+    );
+  }
 
   return (
     <div className="container mt-4">
@@ -283,42 +333,89 @@ export default function AuthIpList() {
               </button>
             </div>
           </div>
-          <div className="mb-2">
-            <strong>Atualização em: </strong>
-            {refreshSeconds}s
-            <div
-              style={{
-                background: "#ddd",
-                width: "100%",
-                height: "5px",
-                marginTop: "5px",
-              }}
-            >
-              <div
-                style={{
-                  background: "#007bff",
-                  width: `${(refreshSeconds / 30) * 100}%`,
-                  height: "5px",
-                }}
-              />
-            </div>
-          </div>
-          <br />
+
           <table className="table table-bordered table-hover">
             <thead className="thead-dark">
               <tr>
-                <th>ID</th>
-                <th>IP Address</th>
-                <th>Descrição</th>
-                <th>Data Ativação</th>
-                <th>Data Vencimento (com Hora)</th>
-                <th>Limite Consultas Mensal</th>
-                <th>Carregado</th>
+                <th onClick={() => handleSort("id")} style={{ cursor: "pointer" }}>
+                  ID
+                  {sortConfig.key === "id"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
+                <th
+                  onClick={() => handleSort("ip_address")}
+                  style={{ cursor: "pointer" }}
+                >
+                  IP Address
+                  {sortConfig.key === "ip_address"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
+                <th
+                  onClick={() => handleSort("description")}
+                  style={{ cursor: "pointer" }}
+                >
+                  Descrição
+                  {sortConfig.key === "description"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
+                <th
+                  onClick={() => handleSort("data_ativacao")}
+                  style={{ cursor: "pointer" }}
+                >
+                  Data Ativação
+                  {sortConfig.key === "data_ativacao"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
+                <th
+                  onClick={() => handleSort("data_vencimento")}
+                  style={{ cursor: "pointer" }}
+                >
+                  Data Vencimento (com Hora)
+                  {sortConfig.key === "data_vencimento"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
+                <th
+                  onClick={() => handleSort("limite_consultas_mensal")}
+                  style={{ cursor: "pointer" }}
+                >
+                  Limite Consultas Mensal
+                  {sortConfig.key === "limite_consultas_mensal"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
+                <th
+                  onClick={() => handleSort("carregado")}
+                  style={{ cursor: "pointer" }}
+                >
+                  Carregado
+                  {sortConfig.key === "carregado"
+                    ? sortConfig.direction === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {lista.map((item) => (
+              {sortedList.map((item) => (
                 <tr key={item.id}>
                   <td>{item.id}</td>
                   <td>
@@ -356,12 +453,27 @@ export default function AuthIpList() {
                   <td>{item.data_ativacao}</td>
                   <td>
                     {editingId === item.id ? (
-                      <input
-                        className="form-control"
-                        value={editingForm.data_vencimento}
-                        onChange={handleEditDateChange}
-                        placeholder="dd/mm/yyyy"
-                      />
+                      <div className="d-flex">
+                        <input
+                          className="form-control"
+                          value={editingForm.data_vencimento}
+                          onChange={handleEditDateChange}
+                          placeholder="dd/mm/yyyy"
+                          style={{ marginRight: "5px" }}
+                        />
+                        <input
+                          className="form-control"
+                          value={editingForm.data_vencimento_time}
+                          onChange={(e) =>
+                            setEditingForm({
+                              ...editingForm,
+                              data_vencimento_time: e.target.value,
+                            })
+                          }
+                          placeholder="HH:MM:SS"
+                          style={{ maxWidth: "100px" }}
+                        />
+                      </div>
                     ) : (
                       formatDateTimeToDDMMYYYYHHmm(item.data_vencimento)
                     )}
