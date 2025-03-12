@@ -277,8 +277,8 @@ export default function App() {
                 <th>ID</th>
                 <th>IP</th>
                 <th>Descrição</th>
-                <th>Data de Vencimento</th>
                 <th>Data de Adição</th>
+                <th>Data de Vencimento</th>
                 <th>Limite Consultas</th>
                 <th>Total Carregado</th>
                 <th>% Utilizado</th>
@@ -291,8 +291,8 @@ export default function App() {
                     <td>{record.id}</td>
                     <td>{record.ip}</td>
                     <td>{record.descricao}</td>
-                    <td>{formatIsoToBr(record.data_vencimento)}</td>
                     <td>{formatDateTimeIsoToBr(record.data_adicao)}</td>
+                    <td>{formatIsoToBr(record.data_vencimento)}</td>
                     <td>{formatNumber(record.limite_consultas)}</td>
                     <td>{formatNumber(record.total_carregado)}</td>
                     <td>{calculatePercentualUtilizado(record.limite_consultas, record.total_carregado)}%</td>
