@@ -170,7 +170,7 @@ export default function App() {
     const lim = parseInt(limite_consultas || 0, 10);
     const car = parseInt(total_carregado || 0, 10);
     if (!lim) return '0.00';
-    return ((lim / car) * 100).toFixed(2);
+    return (1-((lim / car) * 100)).toFixed(2);
   };
 
   return (
