@@ -206,31 +206,34 @@ export default function App() {
     setEditId(e.target.value);
   };
 
-  // Atualiza o registro utilizando uma query SQL via API (UPDATE) para alterar a coluna IP (e id, se desejado)
-  const handleSaveEdit = async recordId => {
-    // Consulta atualizada para a tabela "ip_data" e que só altera a coluna "ip"
-    const query = `UPDATE ip_data SET ip = '${editIp}' WHERE id = ${recordId};`;
+  const handleSaveEdit = async (recordId) => {
     try {
-      const res = await fetch('https://api-liberaip.vercel.app/api/query', {
+      const res = await fetch('https://api-liberaip.vercel.app/api/update-ip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ id: recordId, ip: editIp }),
       });
-      if (res.ok) {
-        setToastMsg('Registro atualizado com sucesso!');
+  
+      const data = await res.json();
+  
+      if (res.ok && data.success) {
+        setToastMsg(data.message);
         loadData();
       } else {
-        setToastMsg('Erro ao atualizar registro.');
+        setToastMsg(`Erro: ${data.error || 'Erro desconhecido'}`);
+        console.error(data);
       }
     } catch (error) {
-      setToastMsg('Erro ao atualizar registro.');
+      setToastMsg(`Erro ao atualizar registro: ${error.message}`);
+      console.error(error);
     }
+  
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
     setEditRecordId(null);
     setEditIp('');
-    setEditId('');
   };
+  
   
 
   const handleCancelEdit = () => {
