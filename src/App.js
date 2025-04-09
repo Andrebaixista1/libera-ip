@@ -234,12 +234,52 @@ export default function App() {
     setEditIp('');
   };
   
-  
-
   const handleCancelEdit = () => {
     setEditRecordId(null);
     setEditIp('');
     setEditId('');
+  };
+
+  // Função para gerar e fazer o download do CSV com os registros filtrados
+  const downloadCSV = () => {
+    // Define o cabeçalho do CSV
+    const headers = [
+      'ID',
+      'IP',
+      'Descrição',
+      'Data de Adição',
+      'Data de Vencimento',
+      'Limite Consultas',
+      'Total Carregado',
+      '% Utilizado'
+    ];
+    // Mapeia os dados filtrados formatando-os conforme necessário
+    const rows = filteredRecords.map(record => [
+      record.id,
+      record.ip,
+      record.descricao,
+      formatDateTimeIsoToBr(record.data_adicao),
+      formatIsoToBr(record.data_vencimento),
+      record.limite_consultas,
+      record.total_carregado,
+      calculatePercentualUtilizado(record.limite_consultas, record.total_carregado)
+    ]);
+
+    // Converte o array para uma string CSV, usando ; como separador
+    const csvContent =
+      headers.join(';') +
+      '\n' +
+      rows.map(row => row.join(';')).join('\n');
+
+    // Cria um blob e gera o link para download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'registros.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -360,7 +400,13 @@ export default function App() {
       </div>
 
       <div className="card">
-        <div className="card-header">Registros</div>
+        {/* Cabeçalho com título e botão de download */}
+        <div className="card-header d-flex justify-content-between align-items-center">
+          <span>Registros</span>
+          <button className="btn btn-outline-primary btn-sm" onClick={downloadCSV} title="Download CSV">
+            ⬇
+          </button>
+        </div>
         <div className="card-body">
           <table className="table table-striped align-middle">
             <thead>
