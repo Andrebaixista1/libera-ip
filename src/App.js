@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// Retorna data padrão de hoje + 31 dias (dd/mm/yyyy)
 function getDefaultDateBr() {
   const now = new Date();
   now.setDate(now.getDate() + 31);
@@ -11,14 +10,12 @@ function getDefaultDateBr() {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-// Converte dd/mm/yyyy -> yyyy-mm-dd
 function formatDateBrToIso(dateBr) {
   if (!dateBr) return '';
   const [day, month, year] = dateBr.split('/');
   return `${year}-${month}-${day}`;
 }
 
-// Converte yyyy-mm-dd -> dd/mm/yyyy
 function formatIsoToBr(dateIso) {
   if (!dateIso) return '';
   const dateObj = new Date(dateIso);
@@ -36,7 +33,6 @@ function formatIsoToBr(dateIso) {
   return `${d}/${m}/${y}`;
 }
 
-// Converte yyyy-mm-dd HH:MM:SS -> dd/mm/yyyy HH:MM
 function formatDateTimeIsoToBr(isoString) {
   if (!isoString) return '';
   const [datePart, timePart] = isoString.split(' ');
@@ -46,11 +42,9 @@ function formatDateTimeIsoToBr(isoString) {
   return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
-// Gera data/hora no formato yyyy-mm-dd HH:MM:SS no fuso de São Paulo
 function getDateTimeBrIso() {
   const now = new Date();
-  // Corrige para fuso horário São Paulo (UTC-3 ou UTC-2 no horário de verão)
-  const offset = 180; // 180 minutos = 3 horas
+  const offset = 180;
   const localMs = now.getTime() - (now.getTimezoneOffset() - offset) * 60000;
   const localDate = new Date(localMs);
   const year = localDate.getFullYear();
@@ -62,7 +56,6 @@ function getDateTimeBrIso() {
   return `${year}-${month}-${day} ${hours}:${mins}:${secs}`;
 }
 
-// Formata números com pontuação
 function formatNumber(value) {
   if (!value) return '0';
   return parseInt(value, 10).toLocaleString('pt-BR');
@@ -79,11 +72,17 @@ export default function App() {
   });
   const [filters, setFilters] = useState({
     ip: '',
-    descricao: ''
+    descricao: '',
+    data_inicio: '',
+    data_final: ''
   });
   const [toastMsg, setToastMsg] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [editRecordId, setEditRecordId] = useState(null);
+  const [editIp, setEditIp] = useState('');
+  const [editId, setEditId] = useState('');
 
   const loadData = () => {
     fetch('https://api-liberaip.vercel.app/api/ipdata')
@@ -106,8 +105,9 @@ export default function App() {
 
   const handleFilterChange = e => {
     const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
-    applyFilters({ ...filters, [name]: value });
+    const newFilters = { ...filters, [name]: value };
+    setFilters(newFilters);
+    applyFilters(newFilters);
   };
 
   const handleSubmit = async e => {
@@ -158,19 +158,85 @@ export default function App() {
     const filtered = records.filter(record => {
       const ipMatch = record.ip.toLowerCase().includes(updatedFilters.ip.toLowerCase());
       const descricaoMatch = record.descricao.toLowerCase().includes(updatedFilters.descricao.toLowerCase());
-      return ipMatch && descricaoMatch;
+      let dateMatch = true;
+      if (updatedFilters.data_inicio) {
+        const recordDate = record.data_adicao ? record.data_adicao.split(' ')[0] : '';
+        if (recordDate < updatedFilters.data_inicio) {
+          dateMatch = false;
+        }
+      }
+      if (updatedFilters.data_final) {
+        const recordDate = record.data_adicao ? record.data_adicao.split(' ')[0] : '';
+        if (recordDate > updatedFilters.data_final) {
+          dateMatch = false;
+        }
+      }
+      return ipMatch && descricaoMatch && dateMatch;
     });
     setFilteredRecords(filtered);
   };
 
-  const totalLimiteConsultas = filteredRecords.reduce((sum, record) => sum + parseInt(record.limite_consultas || 0, 10), 0);
-  const totalCarregadoSum = filteredRecords.reduce((sum, record) => sum + parseInt(record.total_carregado || 0, 10), 0);
+  const totalLimiteConsultas = filteredRecords.reduce(
+    (sum, record) => sum + parseInt(record.limite_consultas || 0, 10),
+    0
+  );
+  const totalCarregadoSum = filteredRecords.reduce(
+    (sum, record) => sum + parseInt(record.total_carregado || 0, 10),
+    0
+  );
 
   const calculatePercentualUtilizado = (limite_consultas, total_carregado) => {
     const lim = parseInt(limite_consultas || 0, 10);
     const car = parseInt(total_carregado || 0, 10);
-    if (!lim) return '0.00';
-    return (1-((lim / car) * 100)).toFixed(2);
+    if (!lim || !car) return '0.00';
+    return ((100 - (lim / car) * 100)).toFixed(2);
+  };
+
+  const handleEditClick = record => {
+    setEditRecordId(record.id);
+    setEditIp(record.ip);
+    setEditId(String(record.id));
+  };
+
+  const handleEditChange = e => {
+    setEditIp(e.target.value);
+  };
+
+  const handleEditIdChange = e => {
+    setEditId(e.target.value);
+  };
+
+  // Atualiza o registro utilizando uma query SQL via API (UPDATE) para alterar a coluna IP (e id, se desejado)
+  const handleSaveEdit = async recordId => {
+    // Consulta atualizada para a tabela "ip_data" e que só altera a coluna "ip"
+    const query = `UPDATE ip_data SET ip = '${editIp}' WHERE id = ${recordId};`;
+    try {
+      const res = await fetch('https://api-liberaip.vercel.app/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      if (res.ok) {
+        setToastMsg('Registro atualizado com sucesso!');
+        loadData();
+      } else {
+        setToastMsg('Erro ao atualizar registro.');
+      }
+    } catch (error) {
+      setToastMsg('Erro ao atualizar registro.');
+    }
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+    setEditRecordId(null);
+    setEditIp('');
+    setEditId('');
+  };
+  
+
+  const handleCancelEdit = () => {
+    setEditRecordId(null);
+    setEditIp('');
+    setEditId('');
   };
 
   return (
@@ -234,7 +300,9 @@ export default function App() {
               />
             </div>
             <div className="col-auto">
-              <button type="submit" className="btn btn-primary">Adicionar</button>
+              <button type="submit" className="btn btn-primary">
+                Adicionar
+              </button>
             </div>
           </form>
         </div>
@@ -264,6 +332,26 @@ export default function App() {
                 onChange={handleFilterChange}
               />
             </div>
+            <div className="col-auto">
+              <label className="form-label">Data Início</label>
+              <input
+                type="date"
+                className="form-control"
+                name="data_inicio"
+                value={filters.data_inicio}
+                onChange={handleFilterChange}
+              />
+            </div>
+            <div className="col-auto">
+              <label className="form-label">Data Final</label>
+              <input
+                type="date"
+                className="form-control"
+                name="data_final"
+                value={filters.data_final}
+                onChange={handleFilterChange}
+              />
+            </div>
           </form>
         </div>
       </div>
@@ -271,7 +359,7 @@ export default function App() {
       <div className="card">
         <div className="card-header">Registros</div>
         <div className="card-body">
-          <table className="table table-striped">
+          <table className="table table-striped align-middle">
             <thead>
               <tr>
                 <th>ID</th>
@@ -282,27 +370,66 @@ export default function App() {
                 <th>Limite Consultas</th>
                 <th>Total Carregado</th>
                 <th>% Utilizado</th>
+                <th className="text-center">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRecords.map(record => {
-                return (
-                  <tr key={record.id}>
-                    <td>{record.id}</td>
-                    <td>{record.ip}</td>
-                    <td>{record.descricao}</td>
-                    <td>{formatDateTimeIsoToBr(record.data_adicao)}</td>
-                    <td>{formatIsoToBr(record.data_vencimento)}</td>
-                    <td>{formatNumber(record.limite_consultas)}</td>
-                    <td>{formatNumber(record.total_carregado)}</td>
-                    <td>{calculatePercentualUtilizado(record.limite_consultas, record.total_carregado)}%</td>
-                  </tr>
-                );
-              })}
+              {filteredRecords.map(record => (
+                <tr key={record.id}>
+                  <td>
+                    {editRecordId === record.id ? (
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={editId}
+                        onChange={handleEditIdChange}
+                        style={{ width: '60px' }}
+                      />
+                    ) : (
+                      record.id
+                    )}
+                  </td>
+                  <td>
+                    {editRecordId === record.id ? (
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={editIp}
+                        onChange={handleEditChange}
+                      />
+                    ) : (
+                      record.ip
+                    )}
+                  </td>
+                  <td>{record.descricao}</td>
+                  <td>{formatDateTimeIsoToBr(record.data_adicao)}</td>
+                  <td>{formatIsoToBr(record.data_vencimento)}</td>
+                  <td>{formatNumber(record.limite_consultas)}</td>
+                  <td>{formatNumber(record.total_carregado)}</td>
+                  <td>{calculatePercentualUtilizado(record.limite_consultas, record.total_carregado)}%</td>
+                  <td className="text-center">
+                    {editRecordId === record.id ? (
+                      <div className="btn-group" role="group">
+                        <button className="btn btn-success btn-sm" onClick={() => handleSaveEdit(record.id)}>
+                          ✔
+                        </button>
+                        <button className="btn btn-secondary btn-sm ms-2" onClick={handleCancelEdit}>
+                          ✖
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="btn btn-warning btn-sm" onClick={() => handleEditClick(record)}>
+                        ✎
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
           <div className="mt-2">
-            <strong>Total Limite Consultas:</strong> {formatNumber(filteredRecords.length ? totalLimiteConsultas : 0)}
+            <strong>Total Limite Consultas:</strong>{' '}
+            {formatNumber(filteredRecords.length ? totalLimiteConsultas : 0)}
           </div>
           <div>
             <strong>Total Carregado:</strong> {formatNumber(totalCarregadoSum)}
